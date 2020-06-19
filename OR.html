@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>测试跨域情况下下载给定链接内容并命名文件</title>
+<script>
+    function downloadData(fileUrl, fileName) {
+        if (window.isDownloadingData) {
+            console.log("正在下载数据，请勿在完成前下载其他内容。");
+            return;
+        }
+        console.log("开始下载数据。");
+        window.isDownloadingData = true;
+        let xhr = new XMLHttpRequest();
+        xhr.responseType = "blob";
+        xhr.open("GET", fileUrl, true);
+        xhr.onreadystatechange = function () {
+            if (this.readyState === 4 && this.status === 200) {
+                console.log("从远程服务器获取数据完成。");
+                window.isDownloadingData = false;
+                let newElement = document.createElement("a");
+                newElement.style.display = "none";
+                newElement.href = URL.createObjectURL(this.response);
+                newElement.download = fileName;
+                document.body.appendChild(newElement);
+                newElement.click();
+            }
+            if (this.readyState === 4 && this.status !== 200) {
+                console.error("从远程服务器获取数据失败，状态码为：" + this.status);
+                window.isDownloadingData = false;
+            }
+        }
+        xhr.send();
+    }
+</script>
+</head>
+<body>
+<p>
+    点击下面的内容下载<br>
+    <a href="test.xlsx" download="测试-中文.xlsx">下载表格文件</a><br>
+    <a href="http://www.example.com/x.xlsx" download="测试-中文-跨域.xlsx">下载跨域表格文件</a><br>
+    <button type="button" onclick="downloadData('http://www.example.com/x.xlsx', '通过AJAX下载的文件.xlsx')">点击这里先获取文件数据再尝试下载</button>
+</p>
+</body>
+</html>
