@@ -14,6 +14,7 @@ function get_file_list(string $dir)
         $files[] = $file;
     }
     closedir($handle);
+    sort($files, SORT_NATURAL|SORT_FLAG_CASE);
     return $files;
 }
 
