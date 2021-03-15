@@ -256,7 +256,7 @@ if (isset($_SERVER['REQUEST_METHOD']) && 'POST' == mb_strtoupper($_SERVER['REQUE
     </p>
     <ol>
         <?php foreach (get_file_list($message) as $file) { ?>
-            <li><a href="message/<?php echo $file; ?>" download="<?php echo $file; ?>"><?php echo $file; ?></a></li>
+            <li><a href="message/<?php echo $file; ?>" download="<?php echo $file; ?>"><?php echo htmlspecialchars($file); ?></a></li>
         <?php } ?>
     </ol>
 </body>
