@@ -2,7 +2,12 @@
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'scan.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'getRandomKeys.php';
 
-$files = scan();
+if (isset($_GET['file']) && is_file('message' . DIRECTORY_SEPARATOR . $_GET['file'])) {
+    $files = [$_GET['file']];
+} else {
+    $files = scan();
+}
+
 $fileNames = [];
 
 foreach (getRandomKeys($files) as $selectKey) {

@@ -256,7 +256,12 @@ if (isset($_SERVER['REQUEST_METHOD']) && 'POST' == mb_strtoupper($_SERVER['REQUE
     </p>
     <ol>
         <?php foreach (get_file_list($message) as $file) { ?>
-            <li><a href="message/<?php echo $file; ?>" download="<?php echo $file; ?>"><?php echo htmlspecialchars($file); ?></a></li>
+            <li>
+                <a href="message/<?php echo $file; ?>" download="<?php echo $file; ?>"><?php echo htmlspecialchars($file); ?></a>
+                <?php if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) == 'mp4') { ?>
+                    <a href="videos.php?file=<?php echo $file; ?>">播放视频</a>
+                <?php } ?>
+            </li>
         <?php } ?>
     </ol>
 </body>
