@@ -20,7 +20,7 @@ $files = [];
             <?php foreach ($fileNames as $fileName) { ?>
             <div>
                 <video width="100%" preload="Metadata" controls>
-                    <source src="videos/<?php echo $fileName ?>">
+                    <source src="message/<?php echo $fileName ?>">
                 </video>
             </div>
             <?php } ?>
