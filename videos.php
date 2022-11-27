@@ -18,7 +18,7 @@ $files = [];
 <html lang="zh-cn">
     <head>
         <meta charset="utf-8">
-        <title>随机的视频展示网站</title>
+        <title><?php echo $_GET['file'] ?? '随机的视频展示网站'; ?></title>
     </head>
     <body>
         <div style="margin:20px auto 20px auto;width:800px">
