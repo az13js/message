@@ -116,6 +116,31 @@ UPLOAD_FINISH;
     }
 }
 
+function do_download_info_save(string $file, string $url)
+{
+    if (!is_dir('.urls')) mkdir('.urls');
+    $file_name = $_SERVER['REQUEST_TIME'] . uniqid() . '.json';
+    file_put_contents(__DIR__ . "/.tmp_$file_name", json_encode([$file, $url]));
+    rename(__DIR__ . "/.tmp_$file_name", __DIR__ . "/.urls/$file_name");
+    $save_finish = <<<DOWNLOAD_INFO_FINISH
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="2; url="message.php"/>
+    <title>INFO</title>
+    <style>
+        body {font-family:"Arial","WenQuanYi Zen Hei";}
+    </style>
+</head>
+<body>
+    <p>OK.<p>
+</body>
+</html>
+DOWNLOAD_INFO_FINISH;
+    echo $save_finish;
+}
+
 if (!is_dir($message = __DIR__ . DIRECTORY_SEPARATOR . 'message')) {
     mkdir($message);
 }
@@ -129,8 +154,12 @@ if (isset($_SERVER['REQUEST_METHOD']) && 'POST' == mb_strtoupper($_SERVER['REQUE
         do_file_upload($message);
         exit();
     }
-    if (0 === mb_stripos($_SERVER['HTTP_CONTENT_TYPE'] ?? '', 'application/x-www-form-urlencoded')) {
+    if (isset($_POST['message']) && 0 === mb_stripos($_SERVER['HTTP_CONTENT_TYPE'] ?? '', 'application/x-www-form-urlencoded')) {
         do_message_save($message);
+        exit();
+    }
+    if (isset($_POST['url']) && 0 === mb_stripos($_SERVER['HTTP_CONTENT_TYPE'] ?? '', 'application/x-www-form-urlencoded')) {
+        do_download_info_save($_POST['file'], $_POST['url']);
         exit();
     }
 }
@@ -254,6 +283,14 @@ if (isset($_SERVER['REQUEST_METHOD']) && 'POST' == mb_strtoupper($_SERVER['REQUE
         <span id="progressval">-%</span><br>
         <button onclick="uploadBigFile('bigFile', 204800)">UPLOAD</button>
     </p>
+    <form action="message.php" method="POST" enctype="application/x-www-form-urlencoded">
+        <p>
+            DOWNLOAD FILE BACKGROUND<br>
+            file:&nbsp;&nbsp;<input type="text" name="file"/><br/><br/>
+            url:&nbsp;&nbsp;&nbsp;<textarea name="url" placeholder="download url"></textarea><br/>
+            <input type="submit" name="submit" value="DOWNLOAD"/>
+        </p>
+    </form>
     <ol>
         <?php foreach (get_file_list($message) as $file) { ?>
             <li>
