@@ -12,7 +12,7 @@ function check()
 {
 
     $dir = __DIR__ . '/public/.urls';
-    $fp = opendir($dir);
+    $fp = @opendir($dir);
     if (false === $fp) {
         return false;
     }

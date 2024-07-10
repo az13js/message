@@ -1,0 +1,17 @@
+# /etc/systemd/system/message-download.service
+# Example:
+[Unit]
+Description=message-download.service
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/html/message
+ExecStart=/usr/bin/php /var/www/html/message/download.php
+ExecStop=/usr/bin/kill -9 $MAINPID
+RestartSec=1
+Restart=always
+TasksMax=infinity
+StartLimitInterval=0
+User=www-data
+[Install]
+WantedBy=multi-user.target
