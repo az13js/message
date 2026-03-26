@@ -139,7 +139,8 @@ function self_url(): string {
 // 获取files目录的URL路径
 function files_url(): string {
     $scriptDir = dirname($_SERVER['PHP_SELF']);
-    return htmlspecialchars($scriptDir . '/' . SCRIPT_NAME);
+    $path = htmlspecialchars($scriptDir . '/' . SCRIPT_NAME);
+    return preg_replace('/^(\/\/)/', '/', $path);
 }
 
 // 开始会话
