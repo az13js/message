@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  files-php:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      # 持久化存储文件数据
+      - files_data:/var/www/html/files
+      - metadata_data:/var/www/html/.files
+    environment:
+      # 可选：设置删除密钥
+      - DELETE_KEY=${DELETE_KEY:-}
+      # 可选：限制允许的文件扩展名，用逗号分隔
+      - ALLOWED_EXTENSIONS=${ALLOWED_EXTENSIONS:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/files.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  files_data:
+    driver: local
+  metadata_data:
+    driver: local
