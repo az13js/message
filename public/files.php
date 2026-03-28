@@ -142,6 +142,7 @@ function get_files(): array {
 // 获取下载任务
 function get_tasks(): array {
     $tasks = [];
+    $now = time();
     $handle = opendir(TASKS_DIR);
     if ($handle === false) {
         return $tasks;
@@ -150,7 +151,17 @@ function get_tasks(): array {
         if ($file === '.' || $file === '..' || pathinfo($file, PATHINFO_EXTENSION) !== 'json') {
             continue;
         }
-        $data = json_decode(file_get_contents(TASKS_DIR . DIRECTORY_SEPARATOR . $file), true);
+        $taskPath = TASKS_DIR . DIRECTORY_SEPARATOR . $file;
+        $data = json_decode(file_get_contents($taskPath), true);
+        
+        // 清理已完成超过30秒的任务
+        if (isset($data['status']) && $data['status'] === 'completed' && isset($data['completed'])) {
+            if ($now - $data['completed'] > 30) {
+                unlink($taskPath);
+                continue;
+            }
+        }
+        
         if ($data) {
             $tasks[] = $data + ['id' => substr($file, 0, -5)];
         }
@@ -424,6 +435,9 @@ $filesUrl = files_url();
         .empty { text-align: center; color: #999; padding: 40px; }
         .task-list { margin-top: 10px; }
         .task-item { padding: 8px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px; font-size: 13px; }
+        .task-progress { position: relative; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; margin-top: 5px; }
+        .task-progress-bar { height: 100%; background: linear-gradient(90deg, #28a745, #20c997); transition: width 0.3s ease; }
+        .task-progress-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #333; font-weight: 500; text-shadow: 0 0 2px rgba(255,255,255,0.8); }
         .checkbox-group { display: flex; align-items: center; gap: 8px; }
         .selected-count { margin-left: 20px; color: #666; font-size: 13px; }
         .batch-actions { margin-left: auto; }
@@ -559,8 +573,24 @@ $filesUrl = files_url();
                 return;
             }
             el.innerHTML = tasks.map(t => {
-                const status = t.status === 'pending' ? '⏳ 等待中' : '⬇️ 下载中';
-                return `<div class="task-item">${status} - ${escapeHtml(t.filename)}</div>`;
+                let statusHtml = '';
+                if (t.status === 'pending') {
+                    statusHtml = '⏳ 等待中';
+                } else if (t.status === 'downloading') {
+                    if (t.total && t.total > 0) {
+                        const percent = Math.min(100, Math.round((t.downloaded / t.total) * 100));
+                        statusHtml = `
+                            <div class="task-progress">
+                                <div class="task-progress-bar" style="width: ${percent}%"></div>
+                                <span class="task-progress-text">${percent}% (${formatSize(t.downloaded)} / ${formatSize(t.total)})</span>
+                            </div>`;
+                    } else {
+                        statusHtml = '⬇️ 下载中...';
+                    }
+                } else if (t.status === 'completed') {
+                    statusHtml = '✅ 下载完成';
+                }
+                return `<div class="task-item">${statusHtml} - ${escapeHtml(t.filename)}</div>`;
             }).join('');
         }
 
