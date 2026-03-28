@@ -6,6 +6,11 @@
  * 使用：重命名此文件后放入任意公共目录即可使用
  * 文件存储在 <脚本名>/ 目录下，由Web服务器直接处理下载
  *
+ * 部署说明：
+ * 1. 确保Web服务器用户(如www-data)对脚本所在目录有写权限
+ * 2. 目录会自动创建，权限设为0777确保可写
+ * 3. 如遇权限问题，手动运行: chown -R www-data:www-data <目录> && chmod -R 755 <目录>
+ *
  * @license MIT
  */
 
@@ -18,9 +23,32 @@ define('ALLOWED_EXTENSIONS', null); // null = 允许所有，或 ['jpg', 'png', 
 define('DELETE_KEY', ''); // 留空则允许任何人删除，设置后需要提供key才能删除
 
 // 初始化目录
-foreach ([DATA_DIR, FILES_DIR, TASKS_DIR] as $dir) {
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
+function init_directories() {
+    $dirs = [DATA_DIR, FILES_DIR, TASKS_DIR];
+    $errors = [];
+    
+    foreach ($dirs as $dir) {
+        if (!is_dir($dir)) {
+            if (!mkdir($dir, 0777, true)) {
+                $errors[] = "无法创建目录: $dir";
+                continue;
+            }
+        }
+        
+        if (!is_writable($dir)) {
+            if (!chmod($dir, 0777)) {
+                $errors[] = "目录不可写，请检查权限: $dir";
+            }
+        }
+    }
+    
+    return $errors;
+}
+
+$dirErrors = init_directories();
+if (!empty($dirErrors) && php_sapi_name() === 'cli') {
+    foreach ($dirErrors as $err) {
+        echo "Warning: $err\n";
     }
 }
 
@@ -278,6 +306,37 @@ try {
             echo json_encode(['success' => true, 'id' => $id]);
             exit;
 
+        case 'batch-delete':
+            if ($method !== 'POST') {
+                throw new Exception('Method not allowed', 405);
+            }
+            if (!csrf_check()) {
+                throw new Exception('CSRF token mismatch', 403);
+            }
+            if (DELETE_KEY !== '' && ($_POST['key'] ?? '') !== DELETE_KEY) {
+                throw new Exception('Invalid delete key', 403);
+            }
+
+            $files = json_decode($_POST['files'] ?? '[]', true);
+            if (!is_array($files)) {
+                throw new Exception('Invalid files list', 400);
+            }
+
+            $results = ['success' => [], 'failed' => []];
+            foreach ($files as $file) {
+                $file = safe_filename($file);
+                $path = FILES_DIR . DIRECTORY_SEPARATOR . $file;
+                if (is_file($path) && unlink($path)) {
+                    $results['success'][] = $file;
+                } else {
+                    $results['failed'][] = $file;
+                }
+            }
+
+            header('Content-Type: application/json');
+            echo json_encode($results);
+            exit;
+
         case 'rename':
             if ($method !== 'POST') {
                 throw new Exception('Method not allowed', 405);
@@ -351,9 +410,12 @@ $filesUrl = files_url();
         .file-name a:hover { text-decoration: underline; }
         .actions a, .actions button { margin-right: 8px; color: #007bff; background: none; border: none; cursor: pointer; font-size: 13px; }
         .actions .delete { color: #dc3545; }
-        .progress { height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; }
-        .progress-bar { height: 100%; background: #28a745; transition: width 0.3s; }
-        .status { font-size: 12px; color: #666; }
+        .actions .batch-delete { color: #dc3545; font-weight: bold; }
+        .progress { height: 24px; background: #e9ecef; border-radius: 12px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #28a745, #20c997); transition: width 0.1s linear; box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3); }
+        .progress-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: #333; font-weight: bold; text-shadow: 1px 1px 2px rgba(255,255,255,0.8); font-size: 12px; }
+        .status { font-size: 12px; color: #666; margin-top: 5px; font-family: monospace; }
+        .upload-info { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: #666; }
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
         .modal.show { display: flex; align-items: center; justify-content: center; }
         .modal-content { background: #fff; padding: 20px; border-radius: 8px; max-width: 90%; max-height: 90%; overflow: auto; }
@@ -362,12 +424,19 @@ $filesUrl = files_url();
         .empty { text-align: center; color: #999; padding: 40px; }
         .task-list { margin-top: 10px; }
         .task-item { padding: 8px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px; font-size: 13px; }
+        .checkbox-group { display: flex; align-items: center; gap: 8px; }
+        .selected-count { margin-left: 20px; color: #666; font-size: 13px; }
+        .batch-actions { margin-left: auto; }
+        .file-checkbox { width: 16px; height: 16px; cursor: pointer; }
+        .table-header-actions { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
         @media (max-width: 600px) {
             .form-row { flex-direction: column; }
             .form-row input, .form-row textarea { min-width: auto; }
             table { font-size: 13px; }
             th, td { padding: 8px; }
             .file-name { max-width: 150px; }
+            .table-header-actions { flex-direction: column; align-items: flex-start; }
+            .batch-actions { margin-left: 0; margin-top: 10px; align-self: flex-end; }
         }
     </style>
 </head>
@@ -382,8 +451,15 @@ $filesUrl = files_url();
                 <button class="btn" onclick="uploadFiles()">上传</button>
             </div>
             <div id="uploadProgress" style="margin-top:10px;display:none;">
-                <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-                <span class="status" id="progressStatus"></span>
+                <div class="upload-info">
+                    <span id="uploadInfo">准备上传...</span>
+                    <span id="uploadSpeed">0 MB/s</span>
+                </div>
+                <div class="progress" style="position: relative;">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <div class="status" id="progressStatus">等待文件选择...</div>
             </div>
         </div>
 
@@ -399,6 +475,18 @@ $filesUrl = files_url();
 
         <div class="card">
             <h2>文件列表</h2>
+            <div class="table-header-actions">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                    全选
+                </label>
+                <span class="selected-count">
+                    已选择 <span id="selectedCount">0</span> 个文件
+                </span>
+                <button class="btn danger batch-actions" id="batchDeleteBtn" onclick="batchDelete()" style="display: none;">
+                    批量删除
+                </button>
+            </div>
             <div id="fileList"></div>
         </div>
     </div>
@@ -440,7 +528,7 @@ $filesUrl = files_url();
             }
 
             el.innerHTML = `<table>
-                <thead><tr><th>文件名</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+                <thead><tr><th>选择</th><th>文件名</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
                 <tbody>${files.map(f => {
                     const fileUrl = `${FILES_URL}/${encodeURIComponent(f.name)}`;
                     const isVideo = f.type.startsWith('video/');
@@ -452,12 +540,16 @@ $filesUrl = files_url();
                     actions.push(`<button class="delete" onclick="deleteFile('${encodeURIComponent(f.name)}')">删除</button>`);
 
                     return `<tr>
+                        <td><input type="checkbox" class="file-checkbox" value="${encodeURIComponent(f.name)}"></td>
                         <td class="file-name"><a href="${fileUrl}" target="_blank">${escapeHtml(f.name)}</a></td>
                         <td>${formatSize(f.size)}</td>
                         <td>${new Date(f.time * 1000).toLocaleString()}</td>
                         <td class="actions">${actions.join('')}</td>
                     </tr>`;
                 }).join('')}</tbody></table>`;
+
+            // 添加复选框事件监听
+            setupFileSelection();
         }
 
         function renderTasks(tasks) {
@@ -479,26 +571,73 @@ $filesUrl = files_url();
             const progress = document.getElementById('uploadProgress');
             const bar = document.getElementById('progressBar');
             const status = document.getElementById('progressStatus');
+            const progressText = document.getElementById('progressText');
+            const uploadInfo = document.getElementById('uploadInfo');
+            const uploadSpeed = document.getElementById('uploadSpeed');
+            
             progress.style.display = 'block';
 
-            let done = 0;
-            const total = input.files.length;
-
+            // 计算总大小
+            let totalSize = 0;
             for (const file of input.files) {
-                status.textContent = `上传中: ${file.name} (${done + 1}/${total})`;
-                await uploadFile(file);
-                done++;
-                bar.style.width = (done / total * 100) + '%';
+                totalSize += file.size;
             }
 
-            status.textContent = '上传完成';
+            let uploadedSize = 0;
+            let currentFileIndex = 0;
+            let startTime = Date.now();
+            let lastTime = startTime;
+            let lastUploaded = 0;
+
+            uploadInfo.textContent = `准备上传 ${input.files.length} 个文件，总大小: ${formatSize(totalSize)}`;
+            status.textContent = '等待开始...';
+            progressText.textContent = '0%';
+            bar.style.width = '0%';
+
+            for (const file of input.files) {
+                currentFileIndex++;
+                status.textContent = `开始上传: ${file.name} (${formatSize(file.size)})`;
+                
+                await uploadFile(file, (chunkUploaded) => {
+                    uploadedSize += chunkUploaded;
+                    const now = Date.now();
+                    const timeDiff = (now - lastTime) / 1000;
+                    const sizeDiff = uploadedSize - lastUploaded;
+                    
+                    // 更新速度
+                    if (timeDiff > 0.5) {
+                        const speed = sizeDiff / timeDiff;
+                        uploadSpeed.textContent = `速度: ${formatSize(speed)}/s`;
+                        lastTime = now;
+                        lastUploaded = uploadedSize;
+                    }
+
+                    const percentage = Math.min(100, (uploadedSize / totalSize) * 100);
+                    bar.style.width = percentage + '%';
+                    progressText.textContent = `${percentage.toFixed(1)}%`;
+                    
+                    // 估算剩余时间
+                    const elapsed = (now - startTime) / 1000;
+                    const totalEstimated = totalSize > 0 ? (elapsed / uploadedSize) * totalSize : 0;
+                    const remaining = Math.max(0, totalEstimated - elapsed);
+                    
+                    status.textContent = `上传中: ${file.name} (${formatSize(file.size)}) - ${currentFileIndex}/${input.files.length} - ${percentage.toFixed(1)}% - 剩余 ${formatTime(remaining)}`;
+                });
+            }
+
+            status.textContent = '上传完成！正在刷新文件列表...';
+            uploadSpeed.textContent = '完成';
             input.value = '';
-            setTimeout(() => { progress.style.display = 'none'; loadFiles(); }, 1000);
+            setTimeout(() => { 
+                progress.style.display = 'none'; 
+                loadFiles(); 
+            }, 1000);
         }
 
-        async function uploadFile(file) {
+        async function uploadFile(file, onProgress) {
             const chunkSize = 100 * 1024; // 100KB
             const chunks = Math.ceil(file.size / chunkSize);
+            let uploadedChunks = 0;
 
             for (let i = 0; i < chunks; i++) {
                 const start = i * chunkSize;
@@ -512,6 +651,26 @@ $filesUrl = files_url();
 
                 const url = `${SELF}?action=upload&append=${i > 0 ? 1 : 0}`;
                 await fetch(url, { method: 'POST', body: formData });
+                
+                uploadedChunks++;
+                const chunkSizeActual = end - start;
+                if (onProgress) {
+                    onProgress(chunkSizeActual);
+                }
+            }
+        }
+
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return `${Math.ceil(seconds)}秒`;
+            } else if (seconds < 3600) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${minutes}分${secs}秒`;
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return `${hours}小时${minutes}分`;
             }
         }
 
@@ -526,6 +685,88 @@ $filesUrl = files_url();
             document.getElementById('downloadUrl').value = '';
             document.getElementById('downloadFilename').value = '';
             loadFiles();
+        }
+
+        function setupFileSelection() {
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            const selectAll = document.getElementById('selectAll');
+            const selectedCount = document.getElementById('selectedCount');
+            const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+
+            function updateSelectedCount() {
+                const selected = document.querySelectorAll('.file-checkbox:checked');
+                selectedCount.textContent = selected.length;
+                batchDeleteBtn.style.display = selected.length > 0 ? 'inline-block' : 'none';
+            }
+
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', updateSelectedCount);
+            });
+
+            selectAll.addEventListener('change', function() {
+                const checked = this.checked;
+                checkboxes.forEach(cb => cb.checked = checked);
+                updateSelectedCount();
+            });
+
+            updateSelectedCount();
+        }
+
+        function getSelectedFiles() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            return Array.from(checkboxes).map(cb => decodeURIComponent(cb.value));
+        }
+
+        async function batchDelete() {
+            const files = getSelectedFiles();
+            if (files.length === 0) {
+                alert('请先选择要删除的文件');
+                return;
+            }
+
+            const confirmMsg = `确定要删除选中的 ${files.length} 个文件吗？\n\n${files.slice(0, 5).join('\n')}${files.length > 5 ? `\n...还有 ${files.length - 5} 个文件` : ''}`;
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('files', JSON.stringify(files));
+                formData.append('_csrf', CSRF);
+
+                const res = await fetch(`${SELF}?action=batch-delete`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    alert('删除失败: ' + data.error);
+                    return;
+                }
+
+                const successCount = data.success ? data.success.length : 0;
+                const failedCount = data.failed ? data.failed.length : 0;
+
+                let msg = `批量删除完成！\n`;
+                if (successCount > 0) {
+                    msg += `成功删除 ${successCount} 个文件\n`;
+                }
+                if (failedCount > 0) {
+                    msg += `失败 ${failedCount} 个文件\n`;
+                    if (data.failed && data.failed.length > 0) {
+                        msg += `失败的文件: ${data.failed.slice(0, 3).join(', ')}${data.failed.length > 3 ? '...' : ''}`;
+                    }
+                }
+
+                alert(msg);
+                loadFiles();
+
+                // 清除选择状态
+                document.getElementById('selectAll').checked = false;
+                setupFileSelection();
+
+            } catch (error) {
+                alert('删除请求失败: ' + error.message);
+            }
         }
 
         async function deleteFile(name) {
