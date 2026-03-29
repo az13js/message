@@ -1,0 +1,33 @@
+version: '3.8'
+
+# 开发环境配置
+services:
+  files-php-dev:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      # 挂载源代码目录，便于开发调试
+      - ./public:/var/www/html
+      - ./data/files:/var/www/html/files
+      - ./data/metadata:/var/www/html/.files
+    environment:
+      DELETE_KEY: dev_key_123
+      ALLOWED_EXTENSIONS: jpg,png,gif,pdf,txt,doc,docx
+    restart: unless-stopped
+    command: apache2-foreground
+
+  # 后台下载服务（开发环境）
+  files-php-download-dev:
+    build: .
+    command: php /var/www/html/files.php.download.php
+    volumes:
+      - ./public:/var/www/html
+      - ./data/files:/var/www/html/files
+      - ./data/metadata:/var/www/html/.files
+    environment:
+      DELETE_KEY: dev_key_123
+      ALLOWED_EXTENSIONS: jpg,png,gif,pdf,txt,doc,docx
+    restart: unless-stopped
+    profiles:
+      - download

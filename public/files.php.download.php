@@ -42,7 +42,7 @@ function log_msg(string $msg): void {
     echo '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL;
 }
 
-function download_file(string $url, string $savePath): bool {
+function download_file(string $url, string $savePath, callable $onProgress = null): bool {
     $fp = fopen($savePath, 'wb');
     if ($fp === false) {
         return false;
@@ -58,10 +58,16 @@ function download_file(string $url, string $savePath): bool {
         CURLOPT_CONNECTTIMEOUT => 60,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        CURLOPT_NOPROGRESS => false,
     ]);
+
+    if ($onProgress) {
+        curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, $onProgress);
+    }
 
     $result = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $totalSize = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
     curl_close($ch);
     fclose($fp);
 
@@ -92,6 +98,9 @@ function process_tasks(string $tasksDir, string $filesDir): void {
         }
 
         $task['status'] = 'downloading';
+        $task['downloaded'] = 0;
+        $task['total'] = 0;
+        $task['started'] = time();
         file_put_contents($taskPath, json_encode($task));
 
         log_msg("Downloading: {$task['filename']}");
@@ -113,7 +122,25 @@ function process_tasks(string $tasksDir, string $filesDir): void {
             log_msg("Renamed to: {$filename}");
         }
 
-        if (download_file($task['url'], $tempPath)) {
+        // 进度回调
+        $taskId = str_replace('.json', '', $file);
+        $lastUpdate = 0;
+        
+        $onProgress = function($resource, $downloadSize, $downloaded, $uploadSize, $uploadTotal) use ($taskPath, &$task, &$lastUpdate, $taskId) {
+            if ($downloadSize > 0) {
+                $task['downloaded'] = $downloaded;
+                $task['total'] = $downloadSize;
+                
+                // 每0.5秒更新一次文件
+                $now = time();
+                if ($now - $lastUpdate >= 0.5) {
+                    file_put_contents($taskPath, json_encode($task));
+                    $lastUpdate = $now;
+                }
+            }
+        };
+
+        if (download_file($task['url'], $tempPath, $onProgress)) {
             rename($tempPath, $finalPath);
             log_msg("Completed: {$filename}");
         } else {
@@ -123,7 +150,10 @@ function process_tasks(string $tasksDir, string $filesDir): void {
             }
         }
 
-        unlink($taskPath);
+        // 更新最终状态为完成
+        $task['status'] = 'completed';
+        $task['completed'] = time();
+        file_put_contents($taskPath, json_encode($task));
     }
 
     closedir($handle);
